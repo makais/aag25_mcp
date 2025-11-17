@@ -1,0 +1,27 @@
+{
+  "buildingMassing": {
+    "id": "building_001",
+    "name": "Sample Office Building",
+    "footprint": {
+      "type": "polyline",
+      "points": [
+        { "x": 0, "y": 0 },
+        { "x": 100, "y": 0 },
+        { "x": 100, "y": 60 },
+        { "x": 80, "y": 80 },
+        { "x": 0, "y": 80 }
+      ],
+      "closed": true
+    },
+    "core": {
+      "type": "rectangle",
+      "center": { "x": 50, "y": 40 },
+      "width": 30,
+      "length": 20,
+      "rotation": 0
+    },
+    "buildingHeight": 240,
+    "numberOfFloors": 20,
+    "floorToFloorHeight": 12
+  }
+}
