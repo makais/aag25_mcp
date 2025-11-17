@@ -777,44 +777,43 @@ def handle_list_eml_parameters(data):
         }
 
 @gh_tool(
-    name="get_eml_parameter_value",
+    name="list_eml_parameters",
     description=(
-        "Get the current value(s) from any eml_ prefixed parameter. "
-        "Works with all parameter types including sliders, panels, toggles, primitives, "
-        "and geometry parameters. For geometry parameters, returns metadata about the "
-        "geometry rather than the actual geometry data.\n\n"
-        "**Parameters:**\n"
-        "- **parameter_name** (str): The name of the eml_ parameter (e.g., 'eml_panel_count')\n"
-        "\n**Returns:**\n"
-        "Dictionary containing the parameter value(s) and metadata."
+        "Discover all EML (eml_) prefixed parameters in the active Grasshopper file. "
+        "The eml_ naming convention is used to mark components for automated interaction "
+        "and cross-file data exchange. This tool finds all components with names starting "
+        "with 'eml_' including:\n\n"
+        "- **Sliders**: Number sliders for numeric input\n"
+        "- **Panels**: Text panels for output or input\n"
+        "- **Boolean Toggles**: True/False switches\n"
+        "- **Value Lists**: Dropdown selection components\n"
+        "- **Number Primitives**: Number containers\n"
+        "- **Text Primitives**: Text containers\n"
+        "- **Integer Primitives**: Integer containers\n"
+        "- **Geometry Parameters**: Curve, Brep, Line, Surface, Point, etc.\n\n"
+        "Each parameter includes metadata about its type, current value, direction (input/output), "
+        "and connection status to help with cross-file data exchange.\n\n"
+        "**Returns:**\n"
+        "Dictionary containing categorized lists of all eml_ parameters."
     )
 )
-async def get_eml_parameter_value(parameter_name: str) -> Dict[str, Any]:
+async def list_eml_parameters() -> Dict[str, Any]:
     """
-    Get value from an eml_ parameter.
-
-    Args:
-        parameter_name: Name of the eml_ parameter
+    List all eml_ prefixed parameters in the Grasshopper document.
 
     Returns:
-        Dict containing parameter value and metadata
+        Dict containing categorized eml_ parameters
     """
-    request_data = {
-        "parameter_name": parameter_name
-    }
+    return call_bridge_api("/list_eml_parameters", {})
 
-    return call_bridge_api("/get_eml_parameter_value", request_data)
-
-@bridge_handler("/get_eml_parameter_value")
-def handle_get_eml_parameter_value(data):
-    """Bridge handler for getting eml_ parameter values"""
+@bridge_handler("/list_eml_parameters")
+def handle_list_eml_parameters(data):
+    """Bridge handler for discovering all eml_ prefixed parameters"""
     try:
         import clr
         clr.AddReference('Grasshopper')
         import Grasshopper
         import Rhino
-
-        parameter_name = data.get('parameter_name', '')
 
         # Get the Grasshopper plugin and document
         gh = Rhino.RhinoApp.GetPlugInObject("Grasshopper")
@@ -831,93 +830,240 @@ def handle_get_eml_parameter_value(data):
                 "error": "No active Grasshopper document found"
             }
 
-        # Find the parameter
-        for obj in gh_doc.Objects:
-            nick_name = obj.NickName or ""
-            if nick_name.lower() == parameter_name.lower():
-                # Slider
-                if isinstance(obj, Grasshopper.Kernel.Special.GH_NumberSlider):
-                    return {
-                        "success": True,
-                        "parameter_name": nick_name,
-                        "type": "slider",
-                        "value": float(str(obj.Slider.Value))
-                    }
+        # Storage for categorized parameters
+        eml_params = {
+            "sliders": [],
+            "panels": [],
+            "boolean_toggles": [],
+            "value_lists": [],
+            "number_primitives": [],
+            "text_primitives": [],
+            "integer_primitives": [],
+            "geometry_params": [],
+            "other_parameters": []  # Catch-all for unrecognized types
+        }
 
-                # Panel
+        # Scan all objects in the document
+        for obj in gh_doc.Objects:
+            try:
+                nick_name = obj.NickName or ""
+                if not nick_name.lower().startswith("eml_"):
+                    continue
+
+                # Get common properties
+                obj_guid = str(obj.InstanceGuid)
+                obj_type_name = type(obj).__name__
+                has_sources = hasattr(obj, 'SourceCount') and obj.SourceCount > 0
+                has_recipients = hasattr(obj, 'Recipients') and obj.Recipients.Count > 0
+
+                # Determine direction
+                if has_sources and has_recipients:
+                    direction = "passthrough"
+                elif has_sources:
+                    direction = "output"
+                elif has_recipients:
+                    direction = "input"
+                else:
+                    direction = "isolated"
+
+                base_info = {
+                    "name": nick_name,
+                    "guid": obj_guid,
+                    "type_name": obj_type_name,  # Add type name for debugging
+                    "direction": direction,
+                    "has_sources": has_sources,
+                    "has_recipients": has_recipients,
+                    "description": obj.Description if hasattr(obj, 'Description') else ""
+                }
+
+                categorized = False
+
+                # 1. Number Sliders
+                if isinstance(obj, Grasshopper.Kernel.Special.GH_NumberSlider):
+                    eml_params["sliders"].append({
+                        **base_info,
+                        "current_value": float(str(obj.Slider.Value)),
+                        "min_value": float(str(obj.Slider.Minimum)),
+                        "max_value": float(str(obj.Slider.Maximum)),
+                        "precision": obj.Slider.DecimalPlaces,
+                        "slider_type": obj.Slider.Type.ToString()
+                    })
+                    categorized = True
+
+                # 2. Panels
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_Panel):
                     panel_text = ""
                     if hasattr(obj, 'Properties') and hasattr(obj.Properties, 'UserText'):
                         panel_text = str(obj.Properties.UserText)
-                    return {
-                        "success": True,
-                        "parameter_name": nick_name,
-                        "type": "panel",
-                        "value": panel_text
-                    }
 
-                # Boolean Toggle
+                    eml_params["panels"].append({
+                        **base_info,
+                        "text": panel_text,
+                        "multiline": obj.Properties.Multiline if hasattr(obj, 'Properties') else True
+                    })
+                    categorized = True
+
+                # 3. Boolean Toggles
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_BooleanToggle):
-                    return {
-                        "success": True,
-                        "parameter_name": nick_name,
-                        "type": "boolean_toggle",
+                    eml_params["boolean_toggles"].append({
+                        **base_info,
                         "value": bool(obj.Value) if hasattr(obj, 'Value') else False
-                    }
+                    })
+                    categorized = True
 
-                # Value List
+                # 4. Value Lists
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_ValueList):
                     selected_items = []
+                    all_items = []
+
                     if hasattr(obj, 'ListItems'):
                         for item in obj.ListItems:
+                            item_name = str(item.Name) if hasattr(item, 'Name') else str(item)
+                            all_items.append(item_name)
                             if hasattr(item, 'Selected') and item.Selected:
-                                selected_items.append(str(item.Name) if hasattr(item, 'Name') else str(item))
-                    return {
-                        "success": True,
-                        "parameter_name": nick_name,
-                        "type": "value_list",
-                        "value": selected_items
-                    }
+                                selected_items.append(item_name)
 
-                # Primitives (Number, Integer, Text)
-                elif hasattr(obj, 'VolatileData'):
-                    values = []
-                    for branch in obj.VolatileData.Branches:
-                        for item in branch:
-                            values.append(str(item))
+                    eml_params["value_lists"].append({
+                        **base_info,
+                        "selected_items": selected_items,
+                        "all_items": all_items
+                    })
+                    categorized = True
 
-                    param_type = "unknown"
-                    if 'Number' in type(obj).__name__:
-                        param_type = "number"
-                        values = [float(v) for v in values]
-                    elif 'Integer' in type(obj).__name__:
-                        param_type = "integer"
-                        values = [int(v) for v in values]
-                    elif 'String' in type(obj).__name__:
-                        param_type = "text"
-                    elif any(g in type(obj).__name__ for g in ['Curve', 'Brep', 'Surface', 'Point', 'Line']):
-                        param_type = "geometry"
-                        values = [f"{type(item).__name__}" for item in obj.VolatileData.AllData(True)]
+                # Now check for parameter types - use more flexible matching
+                if not categorized:
+                    # Check if it's a parameter (has VolatileData)
+                    if hasattr(obj, 'VolatileData'):
+                        values = []
+                        value_type = None
+                        
+                        # Try to extract values and determine type
+                        try:
+                            for branch in obj.VolatileData.Branches:
+                                for item in branch:
+                                    values.append(item)
+                        except:
+                            pass
 
-                    return {
-                        "success": True,
-                        "parameter_name": nick_name,
-                        "type": param_type,
-                        "values": values,
-                        "value_count": len(values)
-                    }
+                        # 5. String/Text Parameters
+                        if 'String' in obj_type_name or 'Text' in obj_type_name:
+                            text_values = [str(v) for v in values]
+                            eml_params["text_primitives"].append({
+                                **base_info,
+                                "type": "Text",
+                                "values": text_values,
+                                "value_count": len(text_values)
+                            })
+                            categorized = True
+
+                        # 6. Integer Parameters
+                        elif 'Integer' in obj_type_name or 'Int' in obj_type_name:
+                            int_values = []
+                            for v in values:
+                                try:
+                                    int_values.append(int(str(v)))
+                                except:
+                                    pass
+                            eml_params["integer_primitives"].append({
+                                **base_info,
+                                "type": "Integer",
+                                "values": int_values,
+                                "value_count": len(int_values)
+                            })
+                            categorized = True
+
+                        # 7. Number Parameters
+                        elif 'Number' in obj_type_name or 'Float' in obj_type_name or 'Double' in obj_type_name:
+                            num_values = []
+                            for v in values:
+                                try:
+                                    num_values.append(float(str(v)))
+                                except:
+                                    pass
+                            eml_params["number_primitives"].append({
+                                **base_info,
+                                "type": "Number",
+                                "values": num_values,
+                                "value_count": len(num_values)
+                            })
+                            categorized = True
+
+                        # 8. Geometry Parameters
+                        elif any(geom_type in obj_type_name for geom_type in [
+                            'Curve', 'Surface', 'Brep', 'Geometry',
+                            'Line', 'Circle', 'Arc', 'Point',
+                            'Mesh', 'Plane', 'Vector', 'Box', 'Rectangle'
+                        ]):
+                            geom_count = len(values) if values else 0
+                            if hasattr(obj, 'VolatileDataCount'):
+                                geom_count = obj.VolatileDataCount
+
+                            eml_params["geometry_params"].append({
+                                **base_info,
+                                "geometry_type": obj_type_name.replace('Param_', '').replace('GH_', ''),
+                                "geometry_count": geom_count,
+                                "has_geometry": geom_count > 0
+                            })
+                            categorized = True
+
+                # If still not categorized, add to "other_parameters" with full details
+                if not categorized:
+                    param_info = {**base_info}
+                    
+                    # Try to get any value information
+                    if hasattr(obj, 'VolatileData'):
+                        try:
+                            values = []
+                            for branch in obj.VolatileData.Branches:
+                                for item in branch:
+                                    values.append(str(item))
+                            param_info["values"] = values
+                            param_info["value_count"] = len(values)
+                        except:
+                            param_info["values"] = []
+                            param_info["value_count"] = 0
+                    
+                    # Try to get VolatileDataCount
+                    if hasattr(obj, 'VolatileDataCount'):
+                        param_info["data_count"] = obj.VolatileDataCount
+                    
+                    eml_params["other_parameters"].append(param_info)
+
+            except Exception as e:
+                # Skip components that cause errors but log them
+                continue
+
+        # Calculate totals
+        total_count = sum(len(v) for v in eml_params.values())
 
         return {
-            "success": False,
-            "error": f"Parameter '{parameter_name}' not found",
-            "parameter_name": parameter_name
+            "success": True,
+            "eml_parameters": eml_params,
+            "summary": {
+                "total_count": total_count,
+                "sliders": len(eml_params["sliders"]),
+                "panels": len(eml_params["panels"]),
+                "boolean_toggles": len(eml_params["boolean_toggles"]),
+                "value_lists": len(eml_params["value_lists"]),
+                "number_primitives": len(eml_params["number_primitives"]),
+                "text_primitives": len(eml_params["text_primitives"]),
+                "integer_primitives": len(eml_params["integer_primitives"]),
+                "geometry_params": len(eml_params["geometry_params"]),
+                "other_parameters": len(eml_params["other_parameters"])
+            },
+            "message": f"Found {total_count} eml_ prefixed parameters"
         }
 
+    except ImportError as e:
+        return {
+            "success": False,
+            "error": f"Grasshopper not available: {str(e)}"
+        }
     except Exception as e:
         import traceback
         return {
             "success": False,
-            "error": f"Error getting parameter value: {str(e)}",
+            "error": f"Error discovering eml_ parameters: {str(e)}",
             "traceback": traceback.format_exc()
         }
 
