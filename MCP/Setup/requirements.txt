@@ -1,0 +1,6 @@
+# MCP Server Dependencies (Python 3.10+)
+mcp>=1.0.0
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+requests>=2.25.0
+numpy>=1.21.0
