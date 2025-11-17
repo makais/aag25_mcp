@@ -1222,6 +1222,9 @@ def handle_set_eml_parameter_value(data):
         import clr
         clr.AddReference('Grasshopper')
         import Grasshopper
+        from Grasshopper.Kernel.Types import GH_Number, GH_Integer, GH_String
+        from Grasshopper.Kernel.Data import GH_Path
+        from Grasshopper.Kernel.Parameters import Param_String, Param_Number, Param_Integer
         import Rhino
         import System
 
@@ -1247,7 +1250,12 @@ def handle_set_eml_parameter_value(data):
         for obj in gh_doc.Objects:
             nick_name = obj.NickName or ""
             if nick_name.lower() == parameter_name.lower():
-                # Slider
+                obj_type_name = type(obj).__name__
+                
+                # Check if has sources (upstream connections)
+                has_sources = hasattr(obj, 'SourceCount') and obj.SourceCount > 0
+
+                # 1. Number Slider
                 if isinstance(obj, Grasshopper.Kernel.Special.GH_NumberSlider):
                     new_value = float(value)
                     clamped_value = max(float(str(obj.Slider.Minimum)),
@@ -1258,14 +1266,13 @@ def handle_set_eml_parameter_value(data):
                         "success": True,
                         "parameter_name": nick_name,
                         "type": "slider",
-                        "old_value": None,
                         "new_value": clamped_value
                     }
 
-                # Panel
+                # 2. Panel (yellow "A")
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_Panel):
-                    if hasattr(obj, 'Properties'):
-                        obj.Properties.UserText = str(value)
+                    obj.UserText = str(value)
+                    obj.ExpireSolution(True)
                     gh_doc.NewSolution(True)
                     return {
                         "success": True,
@@ -1274,7 +1281,7 @@ def handle_set_eml_parameter_value(data):
                         "new_value": str(value)
                     }
 
-                # Boolean Toggle
+                # 3. Boolean Toggle
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_BooleanToggle):
                     obj.Value = bool(value)
                     gh_doc.NewSolution(True)
@@ -1285,15 +1292,23 @@ def handle_set_eml_parameter_value(data):
                         "new_value": bool(value)
                     }
 
-                # Value List
+                # 4. Value List
                 elif isinstance(obj, Grasshopper.Kernel.Special.GH_ValueList):
-                    if hasattr(obj, 'ListItems'):
-                        for item in obj.ListItems:
-                            item_name = str(item.Name) if hasattr(item, 'Name') else str(item)
-                            if item_name.lower() == str(value).lower():
-                                item.Selected = True
-                            else:
-                                item.Selected = False
+                    item_found = False
+                    for i, item in enumerate(obj.ListItems):
+                        if item.Name == str(value) or str(item.Value) == str(value):
+                            obj.SelectItem(i)
+                            item_found = True
+                            break
+                    
+                    if not item_found:
+                        return {
+                            "success": False,
+                            "error": f"Value '{value}' not found in value list",
+                            "parameter_name": nick_name,
+                            "type": "value_list"
+                        }
+                    
                     gh_doc.NewSolution(True)
                     return {
                         "success": True,
@@ -1302,12 +1317,96 @@ def handle_set_eml_parameter_value(data):
                         "new_value": str(value)
                     }
 
-                # For primitives, we can't directly set values as they receive from upstream
+                # 5. String Parameter (orange "A" box)
+                elif isinstance(obj, Param_String):
+                    if has_sources:
+                        return {
+                            "success": False,
+                            "error": f"Parameter '{parameter_name}' has upstream connections. Cannot set value directly.",
+                            "parameter_name": nick_name,
+                            "type": "string_parameter"
+                        }
+                    
+                    # Clear volatile data
+                    obj.ClearData()
+                    # Clear persistent data
+                    obj.PersistentData.Clear()
+                    # Add new persistent text at path 0
+                    path = GH_Path(0)
+                    obj.PersistentData.Append(GH_String(str(value)), path)
+                    obj.ExpireSolution(True)
+                    gh_doc.NewSolution(True)
+                    
+                    return {
+                        "success": True,
+                        "parameter_name": nick_name,
+                        "type": "string_parameter",
+                        "new_value": str(value)
+                    }
+
+                # 6. Number Parameter
+                elif isinstance(obj, Param_Number):
+                    if has_sources:
+                        return {
+                            "success": False,
+                            "error": f"Parameter '{parameter_name}' has upstream connections. Cannot set value directly.",
+                            "parameter_name": nick_name,
+                            "type": "number_parameter"
+                        }
+                    
+                    # Clear volatile data
+                    obj.ClearData()
+                    # Clear persistent data
+                    obj.PersistentData.Clear()
+                    # Add new persistent number at path 0
+                    path = GH_Path(0)
+                    obj.PersistentData.Append(GH_Number(float(value)), path)
+                    obj.ExpireSolution(True)
+                    gh_doc.NewSolution(True)
+                    
+                    return {
+                        "success": True,
+                        "parameter_name": nick_name,
+                        "type": "number_parameter",
+                        "new_value": float(value)
+                    }
+
+                # 7. Integer Parameter
+                elif isinstance(obj, Param_Integer):
+                    if has_sources:
+                        return {
+                            "success": False,
+                            "error": f"Parameter '{parameter_name}' has upstream connections. Cannot set value directly.",
+                            "parameter_name": nick_name,
+                            "type": "integer_parameter"
+                        }
+                    
+                    # Clear volatile data
+                    obj.ClearData()
+                    # Clear persistent data
+                    obj.PersistentData.Clear()
+                    # Add new persistent integer at path 0
+                    path = GH_Path(0)
+                    obj.PersistentData.Append(GH_Integer(int(value)), path)
+                    obj.ExpireSolution(True)
+                    gh_doc.NewSolution(True)
+                    
+                    return {
+                        "success": True,
+                        "parameter_name": nick_name,
+                        "type": "integer_parameter",
+                        "new_value": int(value)
+                    }
+
+                # 8. Unknown component type
                 else:
                     return {
                         "success": False,
-                        "error": f"Parameter type '{type(obj).__name__}' does not support direct value setting (primitives receive values from connected components)",
-                        "parameter_name": nick_name
+                        "error": f"Component '{parameter_name}' (type: '{obj_type_name}') does not support direct value setting",
+                        "parameter_name": nick_name,
+                        "type_name": obj_type_name,
+                        "has_sources": has_sources,
+                        "suggestion": "Supported types: sliders, panels, toggles, value lists, string/number/integer parameters. For geometry, use set_grasshopper_geometry_input"
                     }
 
         return {
