@@ -287,6 +287,101 @@ def handle_list_sliders(data):
             "sliders": []
         }
 
+# ============================================================================
+# OUR CUSTOM GRASSHOPPER TOOLS
+# ============================================================================
+
+@gh_tool(
+    name="generate_building_massing",
+    description=(
+        "Generate a parametric building massing model in Grasshopper from building parameters. "
+        "This tool creates a 3D building volume from a footprint polyline, core rectangle, "
+        "and height/floor parameters. It will load the BuildingMassingGenerator.gh file and "
+        "execute it with the provided parameters to create the massing geometry.\n\n"
+        "**Parameters:**\n"
+        "- **footprint_points** (list): Array of coordinate dictionaries with 'x' and 'y' keys defining the building footprint\n"
+        "- **core_center** (dict): Dictionary with 'x' and 'y' keys for core rectangle center point\n"
+        "- **core_width** (float): Width of the core rectangle\n"
+        "- **core_height** (float): Height/depth of the core rectangle\n"
+        "- **core_rotation** (float, optional): Rotation angle of the core in degrees (default: 0)\n"
+        "- **building_height** (float): Total height of the building\n"
+        "- **number_of_floors** (int): Number of floors in the building\n"
+        "- **floor_to_floor_height** (float, optional): Height between floors (calculated from building_height if not provided)\n"
+        "\n**Returns:**\n"
+        "Dictionary containing the operation status, generated geometry information, and analysis metrics "
+        "(gross floor area, volume, core-to-gross ratio, floor plate efficiency)."
+    )
+)
+async def generate_building_massing(
+    footprint_points: list,
+    core_center: dict,
+    core_width: float,
+    core_height: float,
+    core_rotation: float = 0,
+    building_height: float = None,
+    number_of_floors: int = None,
+    floor_to_floor_height: float = None
+) -> Dict[str, Any]:
+    """
+    Generate building massing model from parameters via HTTP bridge.
+
+    Args:
+        footprint_points: List of {x, y} coordinate dictionaries
+        core_center: {x, y} dictionary for core center
+        core_width: Width of core rectangle
+        core_height: Height/depth of core rectangle
+        core_rotation: Rotation angle in degrees (optional)
+        building_height: Total building height
+        number_of_floors: Number of floors
+        floor_to_floor_height: Floor-to-floor height (optional)
+
+    Returns:
+        Dict containing operation results and analysis data
+    """
+
+    request_data = {
+        "footprint_points": footprint_points,
+        "core_center": core_center,
+        "core_width": core_width,
+        "core_height": core_height,
+        "core_rotation": core_rotation,
+        "building_height": building_height,
+        "number_of_floors": number_of_floors,
+        "floor_to_floor_height": floor_to_floor_height
+    }
+
+    return call_bridge_api("/generate_building_massing", request_data)
+
+@bridge_handler("/generate_building_massing")
+def handle_generate_building_massing(data):
+    """Bridge handler for building massing generation"""
+    try:
+        pass
+
+        ### Here is where we will put the handler for creating the building mass
+        ### it can be contained entirely here or call helper functions that can be added to the end of this file
+        ### The inputs to this function are a dictionary of key/value pairs that come from the input data
+        ### Claude will collect (defined by the json structure in sample.json).
+
+    except ImportError as e:
+        import traceback
+        return {
+            "success": False,
+            "error": f"Rhino/Grasshopper not available: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": f"Error generating building massing: {str(e)}",
+            "traceback": traceback.format_exc()
+        }
+
+# ============================================================================
+# DELIVERED EXAMPLE GRASSHOPPER TOOLS
+# ============================================================================
+
 @gh_tool(
     name="set_grasshopper_slider",
     description=(
