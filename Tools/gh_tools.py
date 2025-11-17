@@ -383,6 +383,117 @@ def handle_generate_building_massing(data):
 # ============================================================================
 
 @gh_tool(
+    name="list_gh_files",
+    description=(
+        "List all Grasshopper (.gh) files available in the Grasshopper File Library with their metadata. "
+        "This tool scans the 'Tools/Grasshopper File Library' directory and returns "
+        "all .gh files with detailed information from metadata.json including descriptions, "
+        "inputs, outputs, categories, and workflow relationships.\n\n"
+        "**Returns:**\n"
+        "Dictionary containing list of available .gh files with their paths, metadata, "
+        "and available workflows. Use this to understand what files are available and how they work together."
+    )
+)
+async def list_gh_files() -> Dict[str, Any]:
+    """
+    List all .gh files in the Grasshopper File Library with metadata.
+
+    Returns:
+        Dict containing available files information and metadata
+    """
+    return call_bridge_api("/list_gh_files", {})
+
+@bridge_handler("/list_gh_files")
+def handle_list_gh_files(data):
+    """Bridge handler for listing .gh files in the library with metadata"""
+    try:
+        import os
+        import json
+
+        # Get the library path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        library_path = os.path.join(script_dir, "Grasshopper File Library")
+
+        if not os.path.exists(library_path):
+            return {
+                "success": False,
+                "error": f"Grasshopper File Library folder not found at: {library_path}",
+                "files": []
+            }
+
+        # Load metadata if available
+        metadata_path = os.path.join(library_path, "metadata.json")
+        metadata = None
+        metadata_files = {}
+
+        if os.path.exists(metadata_path):
+            try:
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                    # Create lookup by filename
+                    if 'files' in metadata:
+                        for file_meta in metadata['files']:
+                            metadata_files[file_meta['filename']] = file_meta
+            except Exception as e:
+                # If metadata fails to load, continue without it
+                pass
+
+        # Find all .gh files recursively
+        gh_files = []
+        for root, dirs, files in os.walk(library_path):
+            for file in files:
+                if file.lower().endswith('.gh'):
+                    full_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(full_path, library_path)
+
+                    file_info = {
+                        "name": file,
+                        "relative_path": relative_path,
+                        "full_path": full_path,
+                        "size_bytes": os.path.getsize(full_path)
+                    }
+
+                    # Add metadata if available
+                    if file in metadata_files:
+                        file_meta = metadata_files[file]
+                        file_info["description"] = file_meta.get("description", "")
+                        file_info["category"] = file_meta.get("category", "")
+                        file_info["tags"] = file_meta.get("tags", [])
+                        file_info["inputs"] = file_meta.get("inputs", [])
+                        file_info["outputs"] = file_meta.get("outputs", [])
+                        file_info["workflow_position"] = file_meta.get("workflow_position")
+                        file_info["dependencies"] = file_meta.get("dependencies", [])
+
+                    gh_files.append(file_info)
+
+        result = {
+            "success": True,
+            "files": gh_files,
+            "count": len(gh_files),
+            "library_path": library_path,
+            "message": f"Found {len(gh_files)} Grasshopper file(s) in library"
+        }
+
+        # Include library info and workflows if metadata exists
+        if metadata:
+            if 'library_info' in metadata:
+                result["library_info"] = metadata["library_info"]
+            if 'workflows' in metadata:
+                result["workflows"] = metadata["workflows"]
+                result["workflow_count"] = len(metadata["workflows"])
+
+        return result
+
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": f"Error listing .gh files: {str(e)}",
+            "traceback": traceback.format_exc(),
+            "files": []
+        }
+
+@gh_tool(
     name="set_grasshopper_slider",
     description=(
         "Change the value of a Grasshopper slider component by name in a specific Grasshopper file. "
