@@ -80,3 +80,6 @@ claude_desktop_config.json
 
 # UV
 .uv/
+
+# Logs
+logs/

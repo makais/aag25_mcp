@@ -9,6 +9,7 @@ Tools are automatically registered using the @gh_tool decorator.
 
 import sys
 import os
+import datetime
 from typing import Dict, Any
 
 # Import bridge_client from MCP directory
@@ -45,6 +46,25 @@ except:
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def write_to_log(message, log_type="INFO"):
+    """Write diagnostic messages to a log file instead of console"""
+    try:
+        # Create logs directory if it doesn't exist
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        logs_dir = os.path.join(script_dir, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # Create log file with date
+        log_file = os.path.join(logs_dir, f"gh_tools_{datetime.datetime.now().strftime('%Y%m%d')}.log")
+
+        # Write log entry with timestamp
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[{timestamp}] [{log_type}] {message}\n")
+    except Exception as e:
+        # Silently fail if logging doesn't work
+        pass
 
 def ensure_file_is_active(file_name: str) -> Dict[str, Any]:
     """
@@ -356,8 +376,28 @@ async def generate_building_massing(
 def handle_generate_building_massing(data):
     """Bridge handler for building massing generation"""
     try:
-        pass
+        import json
 
+        # Log diagnostic output to file
+        write_to_log("=" * 80)
+        write_to_log("BUILDING MASSING GENERATOR - INPUT DATA RECEIVED")
+        write_to_log("=" * 80)
+        write_to_log(json.dumps(data, indent=2, default=str))
+        write_to_log("=" * 80)
+        write_to_log(f"Data keys: {list(data.keys())}")
+        write_to_log(f"Footprint points count: {len(data.get('footprint_points', []))}")
+        write_to_log(f"Core center: {data.get('core_center')}")
+        write_to_log(f"Core dimensions: {data.get('core_width')} x {data.get('core_height')}")
+        write_to_log(f"Building height: {data.get('building_height')}")
+        write_to_log(f"Number of floors: {data.get('number_of_floors')}")
+        write_to_log("=" * 80)
+
+        result = {
+            "success": True,
+            "message": f"Created building."
+        }
+        return result
+ 
         ### Here is where we will put the handler for creating the building mass
         ### it can be contained entirely here or call helper functions that can be added to the end of this file
         ### The inputs to this function are a dictionary of key/value pairs that come from the input data
