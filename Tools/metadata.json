@@ -1,0 +1,215 @@
+{
+  "library_info": {
+    "name": "Building Massing Generator",
+    "version": "1.0.0",
+    "description": "AI-assisted building massing model creation from sketch input with parametric generation and analysis",
+    "last_updated": "2025-11-17"
+  },
+  "workflows": [
+    {
+      "id": "sketch_to_massing_model",
+      "name": "Sketch to Building Massing Model",
+      "description": "Complete workflow from sketch image input through parametric model generation to analysis reporting",
+      "difficulty": "beginner",
+      "estimated_time": "2-5 minutes",
+      "steps": [
+        {
+          "order": 1,
+          "description": "Import building sketch image into Claude Desktop",
+          "action": "user_upload",
+          "required_inputs": ["sketch_image"],
+          "outputs": ["image_data"]
+        },
+        {
+          "order": 2,
+          "description": "Extract building parameters from sketch annotations using AI vision",
+          "action": "ai_extraction",
+          "required_inputs": ["image_data"],
+          "outputs": ["extracted_parameters"],
+          "parameters_extracted": [
+            "footprint_polyline",
+            "core_rectangle",
+            "building_height",
+            "number_of_floors",
+            "floor_to_floor_height"
+          ]
+        },
+        {
+          "order": 3,
+          "description": "Convert extracted data to JSON format and present for user confirmation",
+          "action": "data_validation",
+          "required_inputs": ["extracted_parameters"],
+          "outputs": ["building_parameters_json"],
+          "user_confirmation": true
+        },
+        {
+          "order": 4,
+          "file": "BuildingMassingGenerator.gh",
+          "description": "Call Grasshopper definition via MCP and Rhino bridge (stdio) to create 3D massing model",
+          "action": "mcp_call",
+          "required_inputs": ["building_parameters_json"],
+          "outputs": ["model_creation_status"],
+          "mcp_server": "rhino_bridge",
+          "communication_protocol": "stdio"
+        },
+        {
+          "order": 5,
+          "description": "Verify model creation completion status",
+          "action": "status_check",
+          "required_inputs": ["model_creation_status"],
+          "outputs": ["creation_confirmed"]
+        },
+        {
+          "order": 6,
+          "description": "Extract analysis values and capture model screenshot for reporting",
+          "action": "analysis_and_capture",
+          "required_inputs": ["creation_confirmed"],
+          "outputs": ["analysis_report", "model_screenshot"],
+          "analysis_metrics": [
+            "gross_floor_area",
+            "building_volume",
+            "core_to_gross_ratio",
+            "floor_plate_efficiency"
+          ]
+        }
+      ],
+      "final_outputs": [
+        "Building massing 3D model in Rhino",
+        "Analysis report with key metrics",
+        "Model screenshot for documentation"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "filename": "BuildingMassingGenerator.gh",
+      "name": "Building Massing Generator",
+      "description": "Parametric generator for building massing models. Creates extruded building volumes from footprint polyline, core rectangle, and height parameters.",
+      "category": "geometry",
+      "tags": ["building", "massing", "extrusion", "parametric", "architecture"],
+      "version": "1.0.0",
+      "inputs": [
+        {
+          "name": "footprint_points",
+          "type": "points",
+          "description": "Array of x,y coordinates defining the building footprint polyline",
+          "required": true
+        },
+        {
+          "name": "core_center",
+          "type": "point",
+          "description": "Center point of the core rectangle",
+          "required": true
+        },
+        {
+          "name": "core_width",
+          "type": "number",
+          "description": "Width of the core rectangle",
+          "required": true,
+          "min": 5,
+          "max": 100
+        },
+        {
+          "name": "core_height",
+          "type": "number",
+          "description": "Height (depth) of the core rectangle",
+          "required": true,
+          "min": 5,
+          "max": 100
+        },
+        {
+          "name": "core_rotation",
+          "type": "number",
+          "description": "Rotation angle of the core in degrees",
+          "default": 0,
+          "min": 0,
+          "max": 360
+        },
+        {
+          "name": "building_height",
+          "type": "number",
+          "description": "Total height of the building",
+          "required": true,
+          "min": 10,
+          "max": 1000
+        },
+        {
+          "name": "number_of_floors",
+          "type": "integer",
+          "description": "Number of floors in the building",
+          "required": true,
+          "min": 1,
+          "max": 200
+        },
+        {
+          "name": "floor_to_floor_height",
+          "type": "number",
+          "description": "Height between floors (optional, calculated from building_height if not provided)",
+          "required": false,
+          "min": 8,
+          "max": 20
+        }
+      ],
+      "outputs": [
+        {
+          "name": "massing_volume",
+          "type": "brep",
+          "description": "Extruded building massing solid"
+        },
+        {
+          "name": "core_volume",
+          "type": "brep",
+          "description": "Extruded core solid"
+        },
+        {
+          "name": "floor_surfaces",
+          "type": "surfaces",
+          "description": "Individual floor plate surfaces"
+        },
+        {
+          "name": "analysis_data",
+          "type": "data",
+          "description": "Analysis metrics including GFA, volume, and efficiency ratios"
+        }
+      ],
+      "workflow_position": 1,
+      "workflow_id": "sketch_to_massing_model",
+      "notes": "Parameters are passed directly as JSON arguments via MCP, no file writing required."
+    }
+  ],
+  "objects": [
+    {
+      "name": "building_parameters_json",
+      "type": "json",
+      "description": "Structured building parameters extracted from sketch",
+      "schema": {
+        "footprint": {
+          "type": "polyline",
+          "points": "array of {x, y} coordinates"
+        },
+        "core": {
+          "type": "rectangle",
+          "center": "{x, y}",
+          "width": "number",
+          "height": "number",
+          "rotation": "number"
+        },
+        "buildingHeight": "number",
+        "numberOfFloors": "integer",
+        "floorToFloorHeight": "number (optional)"
+      }
+    },
+    {
+      "name": "analysis_report",
+      "type": "document",
+      "description": "Final report containing analysis values and model screenshot",
+      "contents": [
+        "Gross floor area",
+        "Building volume",
+        "Core to gross ratio",
+        "Floor plate efficiency",
+        "Model screenshot image"
+      ]
+    }
+  ]
+}
